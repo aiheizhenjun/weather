@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>各省市天气信息</title>
+    <link rel="stylesheet" href="./layui/css/layui.css">
+    <style>
+        label {
+            line-height: 38px;
+        }
+
+        .label-city {
+            text-align: end;
+        }
+
+        #echarts-box {
+            width: 100%;
+            height: 400px;
+            margin-top: 100px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 操作栏区域：包含：城市选择、获取天气的按钮 -->
+    <div class="layui-panel">
+        <div style="padding: 32px;">
+            <div class="layui-form layui-row layui-col-space16">
+                <div class="layui-col-md2 label-city">
+                    <label for="city-select">选择城市：</label>
+                </div>
+                <div class="layui-col-md4">
+                    <select id="province" lay-filter="province-select-filter">
+
+                    </select>
+                </div>
+                <div class="layui-col-md4">
+                    <select id="city">
+
+                    </select>
+                </div>
+                <div class="layui-col-md2">
+                    <button id="get-weather" type="button" class="layui-btn">获取天气</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 天气折线图显示区域 -->
+    <div id="echarts-box"></div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="./layui/layui.js"></script>
+    <script>
+        // 获取页面的button DOM元素
+        var getWeatherBtn = $('#get-weather');
+        // 获取页面的id="echarts-box"的元素
+        var echartsBox = $('#echarts-box');
+        // 获取页面的id="province"的元素
+        var province = $('#province');
+        // 获取页面的id="city"的元素
+        var city = $('#city');
+
+        // 初始化echarts的实例
+        var myChart = echarts.init(echartsBox[0]);
+
+        // 给getWeatherBtn绑定一个单击事件
+        getWeatherBtn.on('click', function () {
+            // 获取页面id为city-select元素的值
+            var cityName = city.val();
+
+            // 发送ajax请求，获取天气数据
+            $.ajax({
+                url: "https://api.oioweb.cn/api/weather/weather",
+                type: "GET",
+                data: {
+                    "city_name": cityName
+                },
+                success: function (res) {
+                    convertData(res.result.forecast_list);
+                },
+                error: function (err) {
+                    console.log(err);
+                }
+            })
+        });
+
+        // 创建一个函数，作用：转化echarts图所需要的数据
+        function convertData(data) {
+            var dateArr = []  // 日期数组
+            var lowTempArr = []  // 低温数组
+            var highTempArr = []  // 高温数组
+
+            console.log(data);
+
+            for (var i = 0; i < data.length; i++) {
+                dateArr.push(data[i].date.slice(5).replace('-', '月') + '日');
+                lowTempArr.push(data[i].low_temperature);
+                highTempArr.push(data[i].high_temperature);
+            }
+
+            renderLineChart(dateArr, lowTempArr, highTempArr);
+        }
+
+        // 创建一个函数，作用：动态渲染折线图
+        function renderLineChart(dateArr, lowTempArr, highTempArr) {
+            // 配置echarts折线图的数据
+            var option = {
+                title: {
+                    text: city.val() + '天气信息',
+                    left: 'center'
+                },
+                tooltip: {},
+                xAxis: {
+                    type: 'category',
+                    data: dateArr
+                },
+                yAxis: {},
+                series: [{
+                    name: '最低温',
+                    type: 'line',
+                    data: lowTempArr,
+                    color: ['skyblue']
+                }, {
+                    name: '最高温',
+                    type: 'line',
+                    data: highTempArr,
+                    color: ['orange']
+                }]
+
+            };
+            // 使用刚指定的配置项和数据显示图表。
+            myChart.setOption(option);
+        }
+
+        // 创建一个函数，作用：ajax请求city.json文件，获取地域信息
+        function getAreaInfo() {
+            // 在本地缓存中读取全国省市数据
+            var areaData = localStorage.getItem('area');
+
+            if (areaData) {
+                // 本地缓存中有全国省市数据
+                var areaObj = JSON.parse(areaData);
+                renderProvince(areaObj)
+
+            } else {
+                $.ajax({
+                    url: "./city.json",
+                    success: function (res) {
+                        localStorage.setItem('area',JSON.stringify(res));
+                        renderProvince(res)
+                    },
+                    error: function (err) {
+                        console.log(err);
+                    }
+                })
+            }
+
+
+        }
+
+        // 渲染省份数据
+        function renderProvince(res) {
+            // 获取省份的数据
+            var provincekeys = Object.keys(res["00"]);
+            var provinceValues = Object.values(res["00"]);
+            var provinceOptions = '';
+            for (var i = 0; i < provinceValues.length; i++) {
+                provinceOptions += '<option value="' + provincekeys[i] + '">' + provinceValues[i] + '</option>'
+            }
+            province.html(provinceOptions);
+
+            // 重新渲染select组件
+            layui.use(function () {
+                var form = layui.form;
+                // 当表单元素被插入插入时，需进行组件渲染才能显示
+                form.render('select'); // 仅渲染 select 元素
+                renderCity(res, 1)
+
+                // select 事件
+                form.on('select(province-select-filter)', function (data) {
+                    var value = data.value; // 获得被选中的值
+                    renderCity(res, value);
+                });
+            })
+        }
+
+        // 根据选择的省份不同，渲染不同的市数据
+        function renderCity(res, value) {
+            var cityValues = Object.values(res[value]);
+            var cityOptions = '';
+            for (var i = 0; i < cityValues.length; i++) {
+                cityOptions += '<option value="' + cityValues[i] + '">' + cityValues[i] + '</option>'
+            }
+            city.html(cityOptions);
+
+            // 重新渲染select组件
+            layui.use(function () {
+                var form = layui.form;
+                // 当表单元素被插入插入时，需进行组件渲染才能显示
+                form.render('select'); // 仅渲染 select 元素
+            })
+        }
+
+        getAreaInfo()
+    </script>
+</body>
+
+</html>
